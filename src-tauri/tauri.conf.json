@@ -2,9 +2,9 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Kraken Galaxy Music Player",
   "identifier": "com.kraken.godofmusic",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "build": {
-    "frontendDist": "../",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:8000"
   },
   "app": {
