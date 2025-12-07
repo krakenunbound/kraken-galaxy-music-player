@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Galaxy</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* ===== MEDIA BAR ===== */
+        #media-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: linear-gradient(0deg, rgba(5, 10, 20, 0.98) 0%, rgba(5, 10, 20, 0.95) 80%, transparent 100%);
+            border-top: 1px solid rgba(0, 255, 255, 0.2);
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            box-sizing: border-box;
+            backdrop-filter: blur(15px);
+            z-index: 20;
+            transform: translateY(100%);
+            opacity: 0;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+        }
+
+        #media-bar.visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        /* Progress Bar Container */
+        .progress-container {
+            width: 100%;
+            padding: 0 40px;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding-top: 12px;
+        }
+
+        .time-display {
+            font-size: 0.75rem;
+            color: #88aacc;
+            font-family: 'Consolas', monospace;
+            min-width: 45px;
+        }
+
+        .time-display.total {
+            text-align: right;
+        }
+
+        #progress-bar {
+            flex: 1;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: height 0.2s ease;
+        }
+
+        #progress-bar:hover {
+            height: 6px;
+        }
+
+        #progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            border-radius: 2px;
+            position: relative;
+            transition: width 0.1s linear;
+        }
+
+        #progress-fill::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 12px;
+            background: var(--primary);
+            border-radius: 50%;
+            opacity: 0;
+            transition: opacity 0.2s;
+            box-shadow: 0 0 10px var(--primary);
+        }
+
+        #progress-bar:hover #progress-fill::after {
+            opacity: 1;
+        }
+
+        /* Main Controls Row */
+        .media-main {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 40px 16px;
+        }
+
+        .track-info {
+            display: flex;
+            flex-direction: column;
+            width: 280px;
+            gap: 2px;
+        }
+
+        .track-title {
+            color: var(--primary);
+            font-size: 1rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            letter-spacing: 0.5px;
+        }
+
+        .track-artist {
+            color: #88aacc;
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+
+        .controls-center {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ctrl-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ccc;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .ctrl-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+            transform: scale(1.05);
+        }
+
+        .ctrl-btn:active {
+            transform: scale(0.95);
+        }
+
+        .ctrl-btn.primary {
+            width: 52px;
+            height: 52px;
+            font-size: 1.3rem;
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .ctrl-btn.primary:hover {
+            background: var(--primary);
+            color: #000;
+            box-shadow: 0 0 25px var(--primary);
+        }
+
+        .ctrl-btn.active {
+            background: var(--primary);
+            color: #000;
+            box-shadow: 0 0 15px var(--primary);
+            border-color: var(--primary);
+        }
+
+        .ctrl-btn.mini {
+            width: 36px;
+            height: 36px;
+            font-size: 0.9rem;
+            border: none;
+            color: #88aacc;
+        }
+
+        .ctrl-btn.mini:hover {
+            color: var(--primary);
+            background: rgba(0, 255, 255, 0.1);
+        }
+
+        .volume-cluster {
+            display: flex;
+            gap: 24px;
+            width: 280px;
+            justify-content: flex-end;
+        }
+
+        .vol-group {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+        }
+
+        .vol-label {
+            font-size: 0.65rem;
+            color: #667788;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 90px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 2px;
+            cursor: pointer;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            background: var(--primary);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 8px var(--primary);
+            transition: transform 0.15s;
+        }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        /* ===== LOADING OVERLAY ===== */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 5, 15, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .loading-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 2px solid rgba(0, 255, 255, 0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            color: var(--primary);
+            font-size: 0.9rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ===== KEYBOARD HINTS ===== */
+        .keyboard-hints {
+            position: absolute;
+            bottom: 115px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 24px;
+            opacity: 0;
+            transition: opacity 0.4s;
+            pointer-events: none;
+        }
+
+        .keyboard-hints.visible {
+            opacity: 0.5;
+        }
+
+        .keyboard-hints.visible:hover {
+            opacity: 0.7;
+        }
+
+        .hint {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.7rem;
+            color: #667;
+        }
+
+        .hint kbd {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: inherit;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        /* ===== SECRET MENU ===== */
+        .secret-menu {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(10, 15, 25, 0.95);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 0;
+            min-width: 320px;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(20px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.1);
+        }
+
+        .secret-menu.visible {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .secret-menu-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.15);
+            color: var(--primary);
+            font-size: 0.9rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .secret-close {
+            background: none;
+            border: none;
+            color: #667;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+            transition: color 0.2s;
+        }
+
+        .secret-close:hover {
+            color: var(--primary);
+        }
+
+        .secret-menu-content {
+            padding: 20px;
+        }
+
+        .setting-group {
+            margin-bottom: 20px;
+        }
+
+        .setting-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .setting-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #aab;
+            font-size: 0.85rem;
+            margin-bottom: 10px;
+        }
+
+        .setting-label input[type="checkbox"] {
+            accent-color: var(--primary);
+            width: 16px;
+            height: 16px;
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .setting-row input[type="range"] {
+            flex: 1;
+            width: auto;
+        }
+
+        .setting-value {
+            color: var(--primary);
+            font-size: 0.8rem;
+            font-family: 'Consolas', monospace;
+            min-width: 50px;
+            text-align: right;
+        }
+
+        .setting-sublabel {
+            color: #667;
+            font-size: 0.75rem;
+            white-space: nowrap;
+        }
+
+        .streamer-hide-btn {
+            width: 100%;
+            padding: 10px 16px;
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 6px;
+            color: var(--primary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .streamer-hide-btn:hover {
+            background: rgba(0, 255, 255, 0.2);
+            border-color: rgba(0, 255, 255, 0.5);
+        }
+
+        /* ===== STREAMER MODE HIDE UI ===== */
+        body.streamer-hidden #ui-layer,
+        body.streamer-hidden #media-bar,
+        body.streamer-hidden #keyboard-hints,
+        body.streamer-hidden #reticle {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
+        body.streamer-hidden #ui-layer,
+        body.streamer-hidden #media-bar,
+        body.streamer-hidden #keyboard-hints,
+        body.streamer-hidden #reticle {
+            transition: opacity 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+    
+    <!-- HUD: Reticle for aiming -->
+    <div id="reticle"></div>
+    
+    <!-- UI: Loading Screen -->
+    <div id="loader">
+        <h1>AUDIO GALAXY</h1>
+        <div class="loader-subtitle">Procedural Music Visualization</div>
+        <button class="start-btn" id="init-btn">INITIALIZE ENGINE</button>
+    </div>
+
+    <!-- UI: Main Overlay -->
+    <div id="ui-layer">
+        <header>
+            <div id="status-display">
+                <span id="mode-label">EXPLORATION MODE</span>
+                <span id="sub-label">Local Galaxy Group</span>
+            </div>
+            
+            <!-- CONTROLS -->
+            <div style="display: flex; gap: 10px;">
+                <button id="back-btn" class="hud-btn">EXIT SYSTEM</button>
+            </div>
+        </header>
+
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text" id="loading-text">Scanning Directory</div>
+    </div>
+
+    <!-- MEDIA BAR -->
+    <div id="media-bar">
+        <!-- Progress Bar Row -->
+        <div class="progress-container">
+            <span class="time-display" id="time-current">0:00</span>
+            <div id="progress-bar">
+                <div id="progress-fill"></div>
+            </div>
+            <span class="time-display total" id="time-total">0:00</span>
+        </div>
+
+        <!-- Main Controls Row -->
+        <div class="media-main">
+            <div class="track-info">
+                <div class="track-title" id="player-title">No Track Selected</div>
+                <div class="track-artist" id="player-artist">--</div>
+            </div>
+
+            <div class="controls-center">
+                <button class="ctrl-btn mini" id="btn-shuffle" title="Shuffle">🔀</button>
+                <button class="ctrl-btn" id="btn-prev" title="Previous">⏮</button>
+                <button class="ctrl-btn primary" id="btn-play" title="Play/Pause">▶</button>
+                <button class="ctrl-btn" id="btn-stop" title="Stop">⏹</button>
+                <button class="ctrl-btn" id="btn-next" title="Next">⏭</button>
+            </div>
+
+            <div class="volume-cluster">
+                <div class="vol-group">
+                    <span class="vol-label">Volume</span>
+                    <input type="range" id="vol-music" min="0" max="1" step="0.01" value="0.5">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Hints -->
+    <div class="keyboard-hints" id="keyboard-hints">
+        <div class="hint"><kbd>Space</kbd> Play/Pause</div>
+        <div class="hint"><kbd>←</kbd><kbd>→</kbd> Prev/Next</div>
+        <div class="hint"><kbd>Esc</kbd> Exit System</div>
+    </div>
+
+    <!-- Secret Settings Menu -->
+    <div id="secret-menu" class="secret-menu">
+        <div class="secret-menu-header">
+            <span>Settings</span>
+            <button class="secret-close" id="secret-close">&times;</button>
+        </div>
+        <div class="secret-menu-content">
+            <div class="setting-group">
+                <label class="setting-label">Orbit Speed</label>
+                <div class="setting-row">
+                    <input type="range" id="orbit-speed" min="0.05" max="2.0" step="0.05" value="0.5">
+                    <span class="setting-value" id="orbit-speed-value">0.10x</span>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Streamer Mode</label>
+                <button class="streamer-hide-btn" id="streamer-hide-btn">Hide UI</button>
+                <div class="setting-sublabel" style="margin-top: 8px; color: #667;">Press <kbd>Esc</kbd> to show UI again</div>
+            </div>
+            <div class="setting-group" style="border-top: 1px solid rgba(0,255,255,0.15); padding-top: 20px; margin-top: 20px;">
+                <label class="setting-label">Galaxy Wanderer</label>
+                <div class="setting-row" style="margin-bottom: 10px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="wanderer-mode" style="width: 18px; height: 18px;">
+                        <span style="color: #aaa;">Auto-travel between albums</span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <span style="color: #667; font-size: 12px;">Songs per album:</span>
+                    <input type="range" id="wanderer-songs" min="1" max="10" step="1" value="3" style="flex: 1;">
+                    <span class="setting-value" id="wanderer-songs-value">3</span>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Starfield Density</label>
+                <div class="setting-row">
+                    <input type="range" id="starfield-density" min="500" max="5000" step="100" value="2000">
+                    <span class="setting-value" id="starfield-density-value">2000</span>
+                </div>
+            </div>
+            <div class="setting-group" style="border-top: 1px solid rgba(0,255,255,0.15); padding-top: 20px; margin-top: 20px;">
+                <label class="setting-label">Background Brightness</label>
+                <div class="setting-row">
+                    <input type="range" id="bg-brightness" min="0" max="0.5" step="0.01" value="0">
+                    <span class="setting-value" id="bg-brightness-value">0.00</span>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Exposure</label>
+                <div class="setting-row">
+                    <input type="range" id="tone-exposure" min="0.1" max="3.0" step="0.1" value="1.0">
+                    <span class="setting-value" id="tone-exposure-value">1.00</span>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Fog Density</label>
+                <div class="setting-row">
+                    <input type="range" id="fog-density" min="0.0" max="0.001" step="0.00005" value="0">
+                    <span class="setting-value" id="fog-density-value">Off</span>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Bloom Threshold</label>
+                <div class="setting-row">
+                    <input type="range" id="bloom-threshold" min="0.0" max="1.0" step="0.05" value="0.3">
+                    <span class="setting-value" id="bloom-threshold-value">0.30</span>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Bloom Strength</label>
+                <div class="setting-row">
+                    <input type="range" id="bloom-strength" min="0.0" max="3.0" step="0.1" value="1.2">
+                    <span class="setting-value" id="bloom-strength-value">1.20</span>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Bloom Radius</label>
+                <div class="setting-row">
+                    <input type="range" id="bloom-radius" min="0.0" max="1.5" step="0.05" value="0.5">
+                    <span class="setting-value" id="bloom-radius-value">0.50</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Map imports for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <!-- Main Entry -->
+    <script type="module">
+        import { App } from './js/App.js';
+        
+        // Bootstrapping
+        window.addEventListener('DOMContentLoaded', () => {
+            window.app = new App();
+        });
+    </script>
+</body>
+</html>

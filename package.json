@@ -1,0 +1,17 @@
+{
+  "name": "audio-galaxy",
+  "version": "1.0.0",
+  "description": "Audio Galaxy is an immersive, 3D procedural music visualizer that transforms your local music library into a navigable universe. Each album becomes a solar system, and every track is represented as a unique planet, procedurally generated based on the music's characteristics.",
+  "scripts": {
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "serve": "python -m http.server 8000"
+  },
+  "keywords": ["music", "visualizer", "3d", "threejs", "tauri"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.5"
+  }
+}
