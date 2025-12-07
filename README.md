@@ -40,10 +40,24 @@ Currently, you must build from source (see below).
 ## 🛠 Building from Source
 
 ### Prerequisites
+
+**All Platforms:**
 *   **Node.js** (v16+)
 *   **Rust** (v1.70+)
-*   **Visual Studio C++ Build Tools** (Windows only)
-*   **WebView2 Runtime** (Windows only, usually installed)
+
+**Windows:**
+*   **Visual Studio C++ Build Tools**
+*   **WebView2 Runtime** (usually installed by default)
+
+**Linux (Debian/Ubuntu):**
+*   System dependencies:
+    ```bash
+    sudo apt update
+    sudo apt install libwebkit2gtk-4.0-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+    ```
+
+**macOS:**
+*   **Xcode Command Line Tools** (`xcode-select --install`)
 
 ### Setup
 1.  Clone the repository:
