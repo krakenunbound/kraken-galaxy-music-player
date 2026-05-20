@@ -58,6 +58,16 @@ export class SystemView {
         }
         this.waveformContainer.visible = false;
 
+        // === ORBITAL DUST (OBS Streaming Safe) ===
+        // Subtle dust particles that follow planet orbits.
+        // Designed to look beautiful during cinematic orbit without causing compression artifacts.
+        // Toggle controlled by #orbital-dust-enabled in secret menu.
+        // Low particle count for streaming performance.
+        this.dustParticles = [];
+        this.dustContainer = new THREE.Group();
+        this.container.add(this.dustContainer);
+        this.dustEnabled = false; // Controlled by secret menu toggle
+
         this.selectedTarget = null;
         this.activeStarMat = null;
 
@@ -297,7 +307,58 @@ export class SystemView {
             });
 
             orbitGroup.add(planet);
+
+            // Create subtle orbital dust for this planet (if enabled later)
+            // Dust is created here so it follows the orbitGroup
+            if (this.dustEnabled) {
+                this.createOrbitalDust(orbitGroup, visualDist, track.size);
+            }
         });
+    }
+
+    // === ORBITAL DUST HELPER ===
+    // Creates a small cloud of dust particles that orbit with the planet.
+    // OBS/YouTube safe: Low count, subtle, no bright additive that causes bleed.
+    createOrbitalDust(orbitGroup, dist, planetSize) {
+        const particleCount = 40; // Low count for streaming
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        const sizes = new Float32Array(particleCount);
+
+        for (let i = 0; i < particleCount; i++) {
+            // Position around the orbit
+            const angle = (i / particleCount) * Math.PI * 2;
+            const radius = dist + (Math.random() - 0.5) * 2;
+            positions[i * 3] = Math.cos(angle) * radius;
+            positions[i * 3 + 1] = (Math.random() - 0.5) * 1.5; // Slight vertical spread
+            positions[i * 3 + 2] = Math.sin(angle) * radius;
+
+            // Subtle grayish dust color
+            const gray = 0.6 + Math.random() * 0.3;
+            colors[i * 3] = gray;
+            colors[i * 3 + 1] = gray;
+            colors[i * 3 + 2] = gray + 0.1;
+
+            sizes[i] = 0.8 + Math.random() * 1.2;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+        const material = new THREE.PointsMaterial({
+            size: 1.2,
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false,
+            vertexColors: true,
+            sizeAttenuation: true
+        });
+
+        const dust = new THREE.Points(geometry, material);
+        orbitGroup.add(dust);
+        this.dustParticles.push(dust);
     }
 
     getOrbitColor(planetType) {
@@ -359,6 +420,10 @@ export class SystemView {
             ring.visible = false;
             ring.material.visible = false;
         });
+
+        // Clean up dust
+        this.dustParticles.forEach(dust => disposeObject3D(dust));
+        this.dustParticles = [];
 
         this.interactables = [];
         this.orbitAnimations = [];
@@ -471,6 +536,14 @@ export class SystemView {
             if (allFaded) {
                 this.waveformContainer.visible = false;
             }
+        }
+
+        // Update dust opacity based on toggle (simple for now)
+        // In full version we would sync with secret menu
+        if (!this.dustEnabled) {
+            this.dustContainer.visible = false;
+        } else {
+            this.dustContainer.visible = true;
         }
     }
 
