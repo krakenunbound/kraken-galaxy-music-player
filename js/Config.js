@@ -1,7 +1,7 @@
 /* Configuration Constants */
 export const Config = {
     App: {
-        Version: '1.0.1',
+        Version: '1.1.0',
         Name: 'Kraken Audio Galaxy'
     },
     Colors: {
