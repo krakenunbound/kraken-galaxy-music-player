@@ -417,7 +417,7 @@ export class SystemView {
 
     clear() {
         // Remove all children except selector, waveformContainer, and ambient light
-        const keepObjects = [this.selector, this.waveformContainer, this.ambientLight];
+        const keepObjects = [this.selector, this.waveformContainer, this.dustContainer, this.ambientLight];
         const toRemove = this.container.children.filter(child => !keepObjects.includes(child));
         toRemove.forEach(child => {
             disposeObject3D(child);

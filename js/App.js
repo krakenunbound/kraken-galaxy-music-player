@@ -269,6 +269,13 @@ export class App {
 
         // Bloom radius
         bindSlider('bloom-radius', 'bloom-radius-value', (v) => this.engine.bloomPass.radius = v);
+
+        if (get('orbital-dust-enabled')) {
+            get('orbital-dust-enabled').onchange = (e) => {
+                this.system.setDustEnabled(e.target.checked);
+                this.saveSettings();
+            };
+        }
     }
 
     saveSettings() {
@@ -293,7 +300,8 @@ export class App {
             fogDensity: getVal('fog-density'),
             bloomThreshold: getVal('bloom-threshold'),
             bloomStrength: getVal('bloom-strength'),
-            bloomRadius: getVal('bloom-radius')
+            bloomRadius: getVal('bloom-radius'),
+            orbitalDustEnabled: getCheck('orbital-dust-enabled')
         };
 
         try {
@@ -326,6 +334,11 @@ export class App {
                 get('ticker-enabled').checked = s.tickerEnabled;
                 this.tickerEnabled = s.tickerEnabled;
                 this.ticker.setEnabled(s.tickerEnabled);
+            }
+
+            if (s.orbitalDustEnabled !== undefined && get('orbital-dust-enabled')) {
+                get('orbital-dust-enabled').checked = s.orbitalDustEnabled;
+                this.system.setDustEnabled(s.orbitalDustEnabled);
             }
 
             // Set values and trigger input events to update engine/UI
