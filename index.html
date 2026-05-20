@@ -641,6 +641,51 @@
                     <span class="setting-value" id="bloom-radius-value">0.50</span>
                 </div>
             </div>
+
+            <!-- NEW: Visual Effects section for OBS streaming -->
+            <!-- All new effects are toggleable so you can test with OBS without risk -->
+            <div class="setting-group" style="border-top: 1px solid rgba(0,255,255,0.15); padding-top: 20px; margin-top: 20px;">
+                <label class="setting-label">Visual Effects (OBS Safe)</label>
+                
+                <div class="setting-row" style="margin-bottom: 10px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="orbital-dust-enabled" style="width: 18px; height: 18px;">
+                        <span style="color: #aaa;">Orbital Dust</span>
+                    </label>
+                </div>
+                <div class="setting-sublabel" style="margin-bottom: 12px; color: #667; font-size: 11px;">Subtle dust following planets — excellent during cinematic orbit</div>
+
+                <div class="setting-row" style="margin-bottom: 8px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="obs-safe-bloom" checked style="width: 18px; height: 18px;">
+                        <span style="color: #aaa;">OBS Safe Bloom</span>
+                    </label>
+                </div>
+                <div class="setting-sublabel" style="margin-bottom: 12px; color: #667; font-size: 11px;">Reduces bloom bleed/halos for cleaner YouTube compression</div>
+
+                <div class="setting-row" style="margin-bottom: 8px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="audio-reactive-glow" checked style="width: 18px; height: 18px;">
+                        <span style="color: #aaa;">Audio Reactive Glow</span>
+                    </label>
+                </div>
+
+                <div class="setting-row" style="margin-bottom: 8px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="rich-background" style="width: 18px; height: 18px;">
+                        <span style="color: #aaa;">Rich Background Dust</span>
+                    </label>
+                </div>
+
+                <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(0,255,255,0.1);">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="obs-safe-mode" style="width: 18px; height: 18px;">
+                        <span style="color: #ffaa66; font-weight: 500;">OBS Safe Mode (Master)</span>
+                    </label>
+                    <div class="setting-sublabel" style="color: #667; font-size: 11px; margin-top: 4px;">Auto-lowers effects • Helps preserve true black</div>
+                </div>
+            </div>
+
         </div>
     </div>
 
