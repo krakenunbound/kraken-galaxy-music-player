@@ -308,8 +308,7 @@ export class SystemView {
 
             orbitGroup.add(planet);
 
-            // Create subtle orbital dust for this planet (if enabled later)
-            // Dust is created here so it follows the orbitGroup
+            // Create subtle orbital dust for this planet
             if (this.dustEnabled) {
                 this.createOrbitalDust(orbitGroup, visualDist, track.size);
             }
@@ -359,6 +358,19 @@ export class SystemView {
         const dust = new THREE.Points(geometry, material);
         orbitGroup.add(dust);
         this.dustParticles.push(dust);
+    }
+
+    // Public method to toggle dust from App.js / secret menu
+    setDustEnabled(enabled) {
+        this.dustEnabled = enabled;
+        this.dustContainer.visible = enabled;
+
+        // If enabling mid-album, we could recreate dust, but for simplicity
+        // we recreate on next album load when toggle is on.
+        if (!enabled) {
+            this.dustParticles.forEach(d => disposeObject3D(d));
+            this.dustParticles = [];
+        }
     }
 
     getOrbitColor(planetType) {
@@ -538,13 +550,8 @@ export class SystemView {
             }
         }
 
-        // Update dust opacity based on toggle (simple for now)
-        // In full version we would sync with secret menu
-        if (!this.dustEnabled) {
-            this.dustContainer.visible = false;
-        } else {
-            this.dustContainer.visible = true;
-        }
+        // Dust visibility controlled by toggle
+        this.dustContainer.visible = this.dustEnabled;
     }
 
     show() { this.container.visible = true; }
