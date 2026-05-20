@@ -287,3 +287,20 @@ export class TextureFactory {
         return this.createRing();
     }
 }
+
+/** Dispose GPU resources for a mesh/group and its descendants. */
+export function disposeObject3D(object) {
+    if (!object) return;
+    object.traverse((child) => {
+        if (child.geometry) {
+            child.geometry.dispose();
+        }
+        if (child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach((mat) => {
+                if (mat.map) mat.map.dispose();
+                mat.dispose();
+            });
+        }
+    });
+}

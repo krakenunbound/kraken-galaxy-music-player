@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TextureFactory } from '../utils/Utils.js';
+import { TextureFactory, disposeObject3D } from '../utils/Utils.js';
 import { AtmosphereShader, StarShader, PlanetShader } from '../utils/Shaders.js';
 
 export class SystemView {
@@ -346,7 +346,10 @@ export class SystemView {
         // Remove all children except selector, waveformContainer, and ambient light
         const keepObjects = [this.selector, this.waveformContainer, this.ambientLight];
         const toRemove = this.container.children.filter(child => !keepObjects.includes(child));
-        toRemove.forEach(child => this.container.remove(child));
+        toRemove.forEach(child => {
+            disposeObject3D(child);
+            this.container.remove(child);
+        });
 
         // Reset selector and waveform state
         this.selector.visible = false;

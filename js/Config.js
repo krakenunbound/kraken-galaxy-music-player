@@ -1,5 +1,9 @@
 /* Configuration Constants */
 export const Config = {
+    App: {
+        Version: '1.0.1',
+        Name: 'Kraken Audio Galaxy'
+    },
     Colors: {
         Primary: 0x00ffff,
         Bg: 0x050505,

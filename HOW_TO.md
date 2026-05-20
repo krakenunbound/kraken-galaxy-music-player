@@ -2,11 +2,12 @@
 
 ## Getting Started
 1. Launch the application.
-2. Click **INITIALIZE ENGINE**.
-3. Select a music directory when prompted.
-   - The app will scan your folder structure.
-   - Albums are detected from subfolders.
-   - Tracks are detected from audio files.
+2. Click **INITIALIZE ENGINE** (or **ENTER GALAXY** if a previous session was remembered).
+3. Choose your music library folder in the picker when it appears.
+   - Each subfolder is an album (star in the galaxy).
+   - Audio files inside are tracks (planets).
+   - Supported: `.mp3`, `.wav`, `.ogg`, `.m4a`, `.flac`
+4. The app remembers your folder for next time (browser: File System Access API; desktop: same picker flow).
 
 ## Controls
 
@@ -26,8 +27,9 @@
 ### Secret Menu
 Press **`** (Tilde key, usually above Tab) to open the Settings Menu.
 - **Orbit Speed**: Adjust how fast planets orbit.
-- **Streamer Mode**: Hide UI for recording.
-- **Galaxy Wanderer**: Enable auto-travel mode where the app flies to new albums automatically.
+- **Streamer Mode**: Hide HUD and media bar for recording. The info ticker (if enabled) keeps scrolling at the bottom.
+- **Info Ticker**: Scrolling bar at the bottom with album folder name, track, artist, and embedded file comments (or a default Kraken Audio Galaxy version string).
+- **Galaxy Wanderer**: Auto-travel between albums — returns to the galaxy starfield, picks a random album (never the one just finished), warps in, plays random tracks, then moves on after the set number of songs per album.
 - **Graphics**: Adjust bloom, brightness, and starfield density.
 
 ## Features

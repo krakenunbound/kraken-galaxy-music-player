@@ -31,8 +31,8 @@ export class InputController {
     }
 
     onClick(e) {
-        // Ignore clicks on UI
-        if(e.target.closest('#ui-layer')) return;
+        const uiRoot = '#ui-layer, #media-bar, #secret-menu, #loader, #loading-overlay, #info-ticker, .secret-menu, .ctrl-btn, #progress-bar';
+        if (e.target.closest(uiRoot)) return;
 
         if (this.hoveredTarget && this.events.onClick) {
             this.events.onClick(this.hoveredTarget);
@@ -90,6 +90,8 @@ export class InputController {
     }
 
     updateReticle() {
+        if (!this.reticle) return;
+
         if (this.hoveredTarget) {
             this.reticle.style.display = 'block';
             this.reticle.classList.add('active');

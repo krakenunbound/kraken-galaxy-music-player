@@ -454,6 +454,13 @@
         body.streamer-hidden #reticle {
             transition: opacity 0.5s ease;
         }
+
+        /* Info ticker is independent of streamer UI hide */
+        body.streamer-hidden #info-ticker.visible {
+            opacity: 1 !important;
+            pointer-events: none;
+            bottom: 0;
+        }
     </style>
 </head>
 <body>
@@ -467,7 +474,7 @@
     <!-- UI: Loading Screen -->
     <div id="loader">
         <h1>AUDIO GALAXY</h1>
-        <div class="loader-subtitle">Procedural Music Visualization</div>
+        <div class="loader-subtitle">Loading…</div>
         <button class="start-btn" id="init-btn">INITIALIZE ENGINE</button>
     </div>
 
@@ -528,6 +535,13 @@
         </div>
     </div>
 
+    <!-- Scrolling info ticker (toggle in ~ menu) -->
+    <div id="info-ticker" aria-live="polite">
+        <div class="info-ticker-viewport">
+            <div class="info-ticker-track"></div>
+        </div>
+    </div>
+
     <!-- Keyboard Hints -->
     <div class="keyboard-hints" id="keyboard-hints">
         <div class="hint"><kbd>Space</kbd> Play/Pause</div>
@@ -546,13 +560,23 @@
                 <label class="setting-label">Orbit Speed</label>
                 <div class="setting-row">
                     <input type="range" id="orbit-speed" min="0.05" max="2.0" step="0.05" value="0.5">
-                    <span class="setting-value" id="orbit-speed-value">0.10x</span>
+                    <span class="setting-value" id="orbit-speed-value">0.50x</span>
                 </div>
             </div>
             <div class="setting-group">
                 <label class="setting-label">Streamer Mode</label>
                 <button class="streamer-hide-btn" id="streamer-hide-btn">Hide UI</button>
-                <div class="setting-sublabel" style="margin-top: 8px; color: #667;">Press <kbd>Esc</kbd> to show UI again</div>
+                <div class="setting-sublabel" style="margin-top: 8px; color: #667;">Press <kbd>Esc</kbd> to show UI again. Info ticker (if enabled) stays visible.</div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Info Ticker</label>
+                <div class="setting-row" style="margin-bottom: 4px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="ticker-enabled" style="width: 18px; height: 18px;">
+                        <span style="color: #aaa;">Scroll album / track info along bottom</span>
+                    </label>
+                </div>
+                <div class="setting-sublabel" style="color: #667; font-size: 11px;">Uses embedded file comments when available</div>
             </div>
             <div class="setting-group" style="border-top: 1px solid rgba(0,255,255,0.15); padding-top: 20px; margin-top: 20px;">
                 <label class="setting-label">Galaxy Wanderer</label>
@@ -619,6 +643,9 @@
             </div>
         </div>
     </div>
+
+    <!-- ID3 / metadata for ticker blurbs -->
+    <script src="https://cdn.jsdelivr.net/npm/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
 
     <!-- Map imports for Three.js -->
     <script type="importmap">

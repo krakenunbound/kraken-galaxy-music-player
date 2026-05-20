@@ -29,7 +29,7 @@ Fine-tune the visuals with the hidden overlay.
 ## 🚀 Installation
 
 ### Windows
-1.  Download the latest installer (`.exe`) from the [Releases](https://github.com/krakenunbound/kraken-galaxy/releases) page.
+1.  Download the latest installer (`.exe`) from the [Releases](https://github.com/krakenunbound/kraken-galaxy-music-player/releases) page.
 2.  Run the installer.
 3.  Launch **Kraken Galaxy Music Player**.
 4.  Select your music folder when prompted.

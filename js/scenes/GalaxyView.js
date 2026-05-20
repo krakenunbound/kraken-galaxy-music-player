@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Config } from '../Config.js';
-import { TextureFactory } from '../utils/Utils.js';
+import { TextureFactory, disposeObject3D } from '../utils/Utils.js';
 
 export class GalaxyView {
     constructor(scene) {
@@ -37,6 +37,9 @@ export class GalaxyView {
     setData(galaxyData) {
         // Clear existing
         this.interactables.forEach(sprite => {
+            disposeObject3D(sprite);
+            if (sprite.material?.map) sprite.material.map.dispose();
+            sprite.material?.dispose();
             this.container.remove(sprite);
         });
         this.interactables = [];

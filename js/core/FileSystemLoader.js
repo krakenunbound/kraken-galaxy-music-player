@@ -1,5 +1,14 @@
 import * as THREE from 'three';
 
+function isTauri() {
+    return typeof window.__TAURI__ !== 'undefined';
+}
+
+async function tauriInvoke(cmd, args = {}) {
+    if (!isTauri()) return null;
+    return window.__TAURI__.core.invoke(cmd, args);
+}
+
 export class FileSystemLoader {
     constructor() {
         this.rootHandle = null;
@@ -44,9 +53,55 @@ export class FileSystemLoader {
         });
     }
 
+    getSavedMusicPath() {
+        return localStorage.getItem('galaxy_music_path');
+    }
+
+    async loadFromSavedPath() {
+        if (!isTauri()) return null;
+
+        const root = this.getSavedMusicPath();
+        if (!root) return null;
+        try {
+            console.log('Scanning default music library:', root);
+            const rawAlbums = await tauriInvoke('scan_music_library', { root });
+            if (!rawAlbums?.length) return null;
+            return this.buildGalaxyFromRaw(rawAlbums);
+        } catch (err) {
+            console.error('Default path scan failed:', err);
+            return null;
+        }
+    }
+
+    buildGalaxyFromRaw(rawAlbums) {
+        this.galaxyData = [];
+        let albumId = 0;
+
+        rawAlbums.forEach((album) => {
+            const tracks = album.tracks.map((t, i) => ({
+                id: i,
+                title: t.title,
+                path: t.path,
+                type: 'track'
+            }));
+
+            tracks.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+
+            if (tracks.length > 0) {
+                this.galaxyData.push(this.enrichAlbumData(albumId++, album.name, tracks));
+            }
+        });
+
+        console.log(`Loaded ${this.galaxyData.length} albums from saved path`);
+        return this.galaxyData;
+    }
+
     async pickDirectory(autoLoad = false) {
         try {
             if (autoLoad) {
+                const fromPath = await this.loadFromSavedPath();
+                if (fromPath?.length) return fromPath;
+
                 // Try to load existing handle
                 const savedHandle = await this.getHandle();
                 if (savedHandle) {
@@ -65,9 +120,9 @@ export class FileSystemLoader {
                 }
             }
 
-            // Fallback to picker
+            // Fallback to folder picker
             this.rootHandle = await window.showDirectoryPicker();
-            await this.saveHandle(this.rootHandle); // Save for next time
+            await this.saveHandle(this.rootHandle);
             return await this.scanGalaxy(this.rootHandle);
         } catch (err) {
             console.error("Error picking directory:", err);
@@ -82,7 +137,12 @@ export class FileSystemLoader {
         for await (const entry of dirHandle.values()) {
             if (entry.kind === 'directory') {
                 const albumData = await this.scanAlbum(entry, albumId++);
-                if (albumData.tracks.length > 0) {
+                if (!albumData) continue;
+                if (Array.isArray(albumData)) {
+                    albumData.forEach((album) => {
+                        if (album.tracks.length > 0) this.galaxyData.push(album);
+                    });
+                } else if (albumData.tracks.length > 0) {
                     this.galaxyData.push(albumData);
                 }
             }
@@ -92,6 +152,7 @@ export class FileSystemLoader {
 
     async scanAlbum(dirHandle, id) {
         const tracks = [];
+        const subdirs = [];
         let trackId = 0;
 
         for await (const entry of dirHandle.values()) {
@@ -99,17 +160,35 @@ export class FileSystemLoader {
                 if (this.isAudioFile(entry.name)) {
                     tracks.push({
                         id: trackId++,
-                        title: entry.name.replace(/\.[^/.]+$/, ""), // Remove extension
+                        title: entry.name.replace(/\.[^/.]+$/, ""),
                         handle: entry,
                         type: 'track'
                     });
                 }
+            } else if (entry.kind === 'directory') {
+                subdirs.push(entry);
             }
         }
 
-        // Generate procedural data for the visual representation (stars, planets)
-        // We mix real data (tracks) with procedural visuals
-        return this.enrichAlbumData(id, dirHandle.name, tracks);
+        if (tracks.length > 0) {
+            tracks.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+            return this.enrichAlbumData(id, dirHandle.name, tracks);
+        }
+
+        // No audio here — treat immediate subfolders as albums (Artist/Album layouts)
+        if (subdirs.length === 0) return null;
+
+        const nestedAlbums = [];
+        for (let i = 0; i < subdirs.length; i++) {
+            const nested = await this.scanAlbum(subdirs[i], id * 1000 + i);
+            if (!nested) continue;
+            if (Array.isArray(nested)) nestedAlbums.push(...nested);
+            else nestedAlbums.push(nested);
+        }
+
+        if (nestedAlbums.length === 0) return null;
+        if (nestedAlbums.length === 1) return nestedAlbums[0];
+        return nestedAlbums;
     }
 
     isAudioFile(filename) {

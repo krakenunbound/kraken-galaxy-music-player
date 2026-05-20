@@ -22,6 +22,65 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+/* --- Bottom info ticker (secret menu toggle) --- */
+#info-ticker {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 32px;
+    z-index: 22;
+    background: linear-gradient(0deg, rgba(5, 12, 24, 0.95) 0%, rgba(5, 12, 24, 0.75) 100%);
+    border-top: 1px solid rgba(0, 255, 255, 0.25);
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(100%);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+#info-ticker.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+body.has-media-bar #info-ticker.visible {
+    bottom: 118px;
+}
+
+.info-ticker-viewport {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+}
+
+.info-ticker-track {
+    display: inline-flex;
+    white-space: nowrap;
+    gap: 4rem;
+    padding-left: 100%;
+    animation: ticker-scroll var(--ticker-duration, 28s) linear infinite;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+    color: #9ec8e8;
+    text-shadow: 0 0 8px rgba(0, 255, 255, 0.25);
+}
+
+.info-ticker-track span {
+    padding-right: 4rem;
+}
+
+@keyframes ticker-scroll {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(-50%);
+    }
+}
+
 /* --- Canvas & Overlays --- */
 #canvas-container {
     position: fixed;

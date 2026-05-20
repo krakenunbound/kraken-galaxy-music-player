@@ -7,6 +7,8 @@ import { DataGenerator } from './data/DataGenerator.js';
 import { GalaxyView } from './scenes/GalaxyView.js';
 import { SystemView } from './scenes/SystemView.js';
 import { Config } from './Config.js';
+import { InfoTicker } from './ui/InfoTicker.js';
+import { readTrackMetadata } from './utils/MetadataReader.js';
 
 export class App {
     constructor() {
@@ -27,17 +29,36 @@ export class App {
         this.currentAlbum = null;
         this.currentTrackIndex = -1;
         this.isShuffle = false;
-        this.focusTarget = null; // For cinematic zoom
-        this.idealCameraDistance = 50; // Ideal distance from planet when focused
+        this.focusTarget = null; // Active planet mesh while playing
+        this.planetCameraDistance = 80;
+        this.cinematicOrbitSpeed = 0.08;
+        this._cinematicOrbitAngle = 0;
+        this._cinematicOrbitPitch = 0.32;
+        this._planetFocusScratch = new THREE.Vector3();
+        this._idealCamScratch = new THREE.Vector3();
 
         // Shuffle Bag - tracks indices not yet played in current shuffle cycle
         this.shuffleBag = [];
+        this.shuffleHistory = [];
+
+        // Pre-scanned library from auto-load (avoids double init on ENTER GALAXY)
+        this.preloadedGalaxyData = null;
+        this.warpGeneration = 0;
 
         // Galaxy Wanderer Mode
         this.wandererMode = false;
-        this.wandererSongsPerAlbum = 3; // How many songs before jumping to new album
-        this.wandererSongsPlayed = 0;   // Counter for current album
-        this.allAlbums = [];            // Reference to all loaded albums
+        this.wandererSongsPerAlbum = 3;
+        this.wandererManaging = false;
+        this.wandererBusy = false;
+        this._wandererExiting = false;
+        this._wandererAbort = false;
+        this._trackEndResolve = null;
+        this._trackEndTimeout = null;
+        this.allAlbums = [];
+
+        // Bottom info ticker
+        this.tickerEnabled = false;
+        this.ticker = new InfoTicker(Config.App.Version);
 
         // Settings State
         this.orbitSpeedMultiplier = Config.System.OrbitSpeedMultiplier;
@@ -56,8 +77,16 @@ export class App {
         this.animate();
         this.updateMediaBarVisibility();
 
+        this.updateLoaderHint();
+
         // Attempt to restore previous session
         this.attemptAutoLoad();
+    }
+
+    updateLoaderHint() {
+        const sub = document.querySelector('#loader .loader-subtitle');
+        if (!sub) return;
+        sub.textContent = 'Select your music library folder when prompted (Chrome or Edge)';
     }
 
     async attemptAutoLoad() {
@@ -65,14 +94,9 @@ export class App {
         const data = await this.loader.pickDirectory(true);
         if (data && data.length > 0) {
             console.log("Auto-loaded galaxy data:", data.length, "systems");
-            // Change start button text to indicate ready state
+            this.preloadedGalaxyData = data;
             const btn = document.getElementById('init-btn');
-            if (btn) {
-                btn.innerText = "ENTER GALAXY";
-                btn.onclick = () => {
-                    this.onDataLoaded(data);
-                };
-            }
+            if (btn) btn.innerText = "ENTER GALAXY";
         }
     }
 
@@ -81,8 +105,7 @@ export class App {
 
         // Main UI
         if (get('init-btn')) {
-            // Default behavior if not auto-loaded
-            get('init-btn').addEventListener('click', () => this.startExperience());
+            get('init-btn').addEventListener('click', () => this.onInitClick());
         }
         if (get('back-btn')) get('back-btn').addEventListener('click', () => this.exitSystem());
 
@@ -197,13 +220,31 @@ export class App {
         if (get('wanderer-mode')) {
             get('wanderer-mode').onchange = (e) => {
                 this.wandererMode = e.target.checked;
-                this.wandererSongsPlayed = 0;
                 this.saveSettings();
+                if (this.wandererMode) {
+                    this.startWandererSession();
+                } else {
+                    this.cancelWandererCycle();
+                    this.wandererManaging = false;
+                }
+            };
+        }
+
+        if (get('ticker-enabled')) {
+            get('ticker-enabled').onchange = (e) => {
+                this.tickerEnabled = e.target.checked;
+                this.ticker.setEnabled(this.tickerEnabled);
+                this.saveSettings();
+                if (this.tickerEnabled) {
+                    this.refreshTickerFromCurrentTrack();
+                }
             };
         }
 
         // Orbit speed
         bindSlider('orbit-speed', 'orbit-speed-value', (v) => this.orbitSpeedMultiplier = v, parseFloat, (v) => v.toFixed(2) + 'x');
+        const orbitEl = get('orbit-speed');
+        if (orbitEl) orbitEl.dispatchEvent(new Event('input'));
 
         // Wanderer songs
         bindSlider('wanderer-songs', 'wanderer-songs-value', (v) => this.wandererSongsPerAlbum = v, parseInt, (v) => v);
@@ -245,6 +286,7 @@ export class App {
             orbitSpeed: getVal('orbit-speed'),
             wandererMode: getCheck('wanderer-mode'),
             wandererSongs: getVal('wanderer-songs', 'int'),
+            tickerEnabled: getCheck('ticker-enabled'),
             starfieldDensity: getVal('starfield-density', 'int'),
             bgBrightness: getVal('bg-brightness'),
             toneExposure: getVal('tone-exposure'),
@@ -278,6 +320,12 @@ export class App {
             if (s.wandererMode !== undefined && get('wanderer-mode')) {
                 get('wanderer-mode').checked = s.wandererMode;
                 this.wandererMode = s.wandererMode;
+            }
+
+            if (s.tickerEnabled !== undefined && get('ticker-enabled')) {
+                get('ticker-enabled').checked = s.tickerEnabled;
+                this.tickerEnabled = s.tickerEnabled;
+                this.ticker.setEnabled(s.tickerEnabled);
             }
 
             // Set values and trigger input events to update engine/UI
@@ -315,12 +363,12 @@ export class App {
         document.body.classList.remove('streamer-hidden');
     }
 
-    resumeOrPlayTrack() {
+    async resumeOrPlayTrack() {
         if (this.audio.isPaused) {
-            this.audio.resumeAudio();
-            document.getElementById('btn-play').innerText = '⏸';
+            const resumed = await this.audio.resumeAudio();
+            document.getElementById('btn-play').innerText = resumed ? '⏸' : '▶';
         } else {
-            this.playTrack();
+            await this.playTrack();
         }
     }
 
@@ -335,6 +383,7 @@ export class App {
         if (keyboardHints) {
             keyboardHints.classList.toggle('visible', isSystem);
         }
+        document.body.classList.toggle('has-media-bar', isSystem);
     }
 
     showLoading(show, text = 'Loading') {
@@ -346,6 +395,17 @@ export class App {
         if (loadingText && text) {
             loadingText.innerText = text;
         }
+    }
+
+    async onInitClick() {
+        if (this.preloadedGalaxyData) {
+            const data = this.preloadedGalaxyData;
+            this.preloadedGalaxyData = null;
+            await this.audio.init();
+            await this.onDataLoaded(data);
+            return;
+        }
+        await this.startExperience();
     }
 
     async startExperience() {
@@ -371,13 +431,12 @@ export class App {
     }
 
     async onDataLoaded(data) {
-        // Ensure audio context is ready/initialized
-        if (!this.audio.context) {
+        if (!this.audio.initialized) {
             await this.audio.init();
         }
 
-        if (this.audio.context && this.audio.context.state === 'suspended') {
-            await this.audio.context.resume();
+        if (this.audio.ctx.state === 'suspended') {
+            await this.audio.ctx.resume();
         }
 
         const loader = document.getElementById('loader');
@@ -399,9 +458,16 @@ export class App {
         }
 
         this.mode = 'GALAXY';
+
+        if (this.wandererMode) {
+            this.startWandererSession();
+        }
     }
 
     onObjectClicked(target) {
+        this._wandererAbort = true;
+        this.cancelWandererCycle();
+        this.wandererManaging = false;
         let rootObj = target;
         while (rootObj.parent && !rootObj.userData.type && rootObj.parent.type !== 'Scene') {
             rootObj = rootObj.parent;
@@ -414,64 +480,85 @@ export class App {
             this.enterSystem(data);
         } else if (this.mode === 'SYSTEM') {
             if (type === 'track') {
-                // If clicking a planet, play that track
                 const idx = this.currentAlbum.tracks.indexOf(data);
+                if (idx < 0) return;
+
+                if (idx === this.currentTrackIndex && this.audio.isPlaying) {
+                    this.pauseTrack();
+                    return;
+                }
+
                 this.currentTrackIndex = idx;
                 this.playTrack();
-                this.system.highlight(rootObj);
             }
         }
     }
 
     enterSystem(albumData) {
+        const generation = ++this.warpGeneration;
         this.mode = 'TRANSITION';
-        this.audio.playSound('warp');
         this.currentAlbum = albumData;
 
         let speed = 0;
-        const warpAnimation = async () => {
-            speed += 2;
-            this.engine.camera.position.z -= speed * speed;
 
-            if (this.engine.camera.position.z < -2000) {
-                // Transition point
-                this.galaxy.hide();
-
-                // Instant GPU Load
-                this.system.loadAlbum(albumData);
-
-                this.system.show();
-
-                this.engine.camera.position.set(0, 200, 350);
-                this.engine.controls.target.set(0, 0, 0);
-                this.engine.controls.maxDistance = 1000;
-                this.engine.controls.autoRotate = false;
-
-                this.mode = 'SYSTEM';
-
-                // Update UI text
-                if (document.getElementById('mode-label')) {
-                    document.getElementById('mode-label').innerText = albumData.title;
-                    document.getElementById('sub-label').innerText = albumData.artist;
+        return new Promise((resolve) => {
+            const warpAnimation = () => {
+                if (generation !== this.warpGeneration) {
+                    resolve(false);
+                    return;
                 }
-                document.getElementById('back-btn').style.display = 'block';
 
-                // Reset player for new system
-                this.currentTrackIndex = 0;
-                this.wandererSongsPlayed = 0;
-                this.resetShuffleBag();
-                this.updatePlayerUI();
-                this.updateMediaBarVisibility();
+                speed += 2;
+                this.engine.camera.position.z -= speed * speed;
 
-            } else {
-                requestAnimationFrame(warpAnimation);
-            }
-        };
-        warpAnimation();
+                if (this.engine.camera.position.z < -2000) {
+                    this.galaxy.hide();
+                    this.system.loadAlbum(albumData);
+                    this.system.show();
+
+                    this.systemViewRadius = this.getSystemViewRadius();
+                    const enterDist = Math.max(380, this.systemViewRadius * 1.35);
+                    this.engine.camera.position.set(enterDist * 0.55, enterDist * 0.55, enterDist * 0.85);
+                    this.engine.controls.target.set(0, 0, 0);
+                    this.engine.controls.maxDistance = Math.max(2000, enterDist * 2.5);
+                    this.engine.controls.minDistance = 80;
+                    this.engine.controls.autoRotate = false;
+
+                    this.mode = 'SYSTEM';
+
+                    if (document.getElementById('mode-label')) {
+                        document.getElementById('mode-label').innerText = albumData.title;
+                        document.getElementById('sub-label').innerText = albumData.artist;
+                    }
+                    document.getElementById('back-btn').style.display = 'block';
+
+                    this.currentTrackIndex = 0;
+                    this.wandererSongsPlayed = 0;
+                    this.resetShuffleBag();
+                    this.updatePlayerUI();
+                    this.updateMediaBarVisibility();
+
+                    resolve(true);
+                } else {
+                    requestAnimationFrame(warpAnimation);
+                }
+            };
+            warpAnimation();
+        });
     }
 
     exitSystem() {
-        this.audio.playSound('scan');
+        if (this.wandererManaging && !this._wandererExiting) {
+            this._wandererAbort = true;
+            this.cancelWandererCycle();
+            this.wandererManaging = false;
+            const wandererCb = document.getElementById('wanderer-mode');
+            if (wandererCb) wandererCb.checked = false;
+            this.wandererMode = false;
+            this.saveSettings();
+        }
+
+        this.warpGeneration++;
         this.stopTrack(); // Stop music when leaving
         this.system.highlight(null);
         this.system.hide();
@@ -494,44 +581,92 @@ export class App {
         this.updateMediaBarVisibility();
     }
 
+    /** Farthest orbit radius in the current album (star sits at 0,0,0). */
+    getSystemViewRadius() {
+        if (!this.currentAlbum?.tracks?.length) return 320;
+        let max = 200;
+        for (const t of this.currentAlbum.tracks) {
+            const orbit = (t.dist || 60) * 1.5;
+            const body = (t.size || 2) * 8;
+            max = Math.max(max, orbit + body);
+        }
+        return max;
+    }
+
+    findPlanetMeshForTrack(trackData) {
+        let planet = this.system.interactables.find(
+            (m) => m.userData.type === 'track' && m.userData.data === trackData
+        );
+        if (!planet) {
+            const tracks = this.system.interactables.filter((m) => m.userData.type === 'track');
+            if (this.currentTrackIndex >= 0 && this.currentTrackIndex < tracks.length) {
+                planet = tracks[this.currentTrackIndex];
+            }
+        }
+        return planet || null;
+    }
+
+    beginPlanetFocus(planet) {
+        if (!planet) return;
+
+        this.focusTarget = planet;
+        this.system.highlight(planet);
+
+        const planetSize = planet.userData.data?.size || 2;
+        this.planetCameraDistance = THREE.MathUtils.clamp(planetSize * 22, 55, 150);
+
+        const planetPos = this._planetFocusScratch;
+        planet.getWorldPosition(planetPos);
+        const camOffset = new THREE.Vector3().subVectors(
+            this.engine.camera.position,
+            planetPos
+        );
+        if (camOffset.lengthSq() > 1) {
+            this._cinematicOrbitAngle = Math.atan2(camOffset.z, camOffset.x);
+            this._cinematicOrbitPitch = THREE.MathUtils.clamp(
+                Math.asin(camOffset.y / camOffset.length()),
+                0.18,
+                0.62
+            );
+        }
+
+        this.engine.controls.autoRotate = false;
+    }
+
     // --- MEDIA CONTROLS ---
 
     async playTrack() {
-        if (!this.currentAlbum) return;
+        if (!this.currentAlbum) return false;
 
-        // Visual Logic: Find the planet mesh for this track
+        this.cancelPendingTrackEnd();
+        this.audio.stopAudio();
+
         const trackData = this.currentAlbum.tracks[this.currentTrackIndex];
+        let started = false;
 
-        // Play Audio
-        if (trackData.handle) {
-            await this.audio.playAudioFile(trackData.handle);
+        if (trackData.path) {
+            started = await this.audio.playAudioFile(trackData.path);
+        } else if (trackData.handle) {
+            started = await this.audio.playAudioFile(trackData.handle);
         } else {
-            // Fallback for simulation mode
-            this.audio.playTrackSim();
+            started = this.audio.playTrackSim();
         }
 
-        document.getElementById('btn-play').innerText = '⏸';
+        document.getElementById('btn-play').innerText = started ? '⏸' : '▶';
         this.updatePlayerUI();
+        if (started) {
+            await this.refreshTickerFromCurrentTrack();
+        }
+
+        if (!started) return false;
 
         // We need to find the mesh in the system view interactables that matches this data
         // Note: SystemView recreates meshes, so we need to find the new one based on data reference or ID
         // Since objects are recreated, the data reference might be the same object if passed through
-        const planet = this.system.interactables.find(m => m.userData.data === trackData);
+        const planet = this.findPlanetMeshForTrack(trackData);
+        this.beginPlanetFocus(planet);
 
-        if (planet) {
-            this.system.highlight(planet);
-            this.focusTarget = planet;
-
-            // Calculate ideal viewing distance based on planet size
-            const planetSize = planet.userData.data?.size || 2;
-            // Larger planets need more distance, smaller planets we zoom in closer
-            // Distance is generous enough to still see the solar system context
-            this.idealCameraDistance = Math.max(40, planetSize * 25);
-
-            // Enable Cinematic Mode
-            this.engine.controls.autoRotate = true;
-            this.engine.controls.autoRotateSpeed = 0.5;
-        }
+        return true;
     }
 
     pauseTrack() {
@@ -543,7 +678,6 @@ export class App {
     stopTrack() {
         this.audio.stopAudio();
         document.getElementById('btn-play').innerText = '▶';
-        this.currentTrackIndex = 0;
         this.updatePlayerUI();
         this.system.highlight(null);
 
@@ -559,26 +693,31 @@ export class App {
         this.engine.controls.target.set(0, 0, 0);
     }
 
-    // Called when a track ends naturally
     onTrackEnd() {
-        this.wandererSongsPlayed++;
-
-        // Check if wanderer mode should jump to new album
-        if (this.wandererMode && this.wandererSongsPlayed >= this.wandererSongsPerAlbum) {
-            this.wanderToNewAlbum();
-        } else {
-            this.nextTrack();
+        if (this._trackEndResolve) {
+            const resolve = this._trackEndResolve;
+            this._trackEndResolve = null;
+            if (this._trackEndTimeout) {
+                clearTimeout(this._trackEndTimeout);
+                this._trackEndTimeout = null;
+            }
+            resolve();
+            return;
         }
+
+        if (this.wandererManaging) return;
+
+        this.nextTrack();
     }
 
     // Initialize or refill the shuffle bag with all track indices
     resetShuffleBag() {
         if (!this.currentAlbum) return;
         this.shuffleBag = [];
+        this.shuffleHistory = [];
         for (let i = 0; i < this.currentAlbum.tracks.length; i++) {
             this.shuffleBag.push(i);
         }
-        // Fisher-Yates shuffle
         for (let i = this.shuffleBag.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [this.shuffleBag[i], this.shuffleBag[j]] = [this.shuffleBag[j], this.shuffleBag[i]];
@@ -590,13 +729,14 @@ export class App {
         if (this.shuffleBag.length === 0) {
             this.resetShuffleBag();
         }
-        return this.shuffleBag.pop();
+        const idx = this.shuffleBag.pop();
+        this.shuffleHistory.push(idx);
+        return idx;
     }
 
     nextTrack() {
         if (!this.currentAlbum) return;
         if (this.isShuffle) {
-            // Use bag shuffle - no repeats until all played
             this.currentTrackIndex = this.getNextShuffleIndex();
         } else {
             this.currentTrackIndex = (this.currentTrackIndex + 1) % this.currentAlbum.tracks.length;
@@ -606,68 +746,205 @@ export class App {
 
     prevTrack() {
         if (!this.currentAlbum) return;
-        this.currentTrackIndex = (this.currentTrackIndex - 1 + this.currentAlbum.tracks.length) % this.currentAlbum.tracks.length;
+        if (this.isShuffle && this.shuffleHistory.length > 1) {
+            this.shuffleHistory.pop();
+            this.currentTrackIndex = this.shuffleHistory[this.shuffleHistory.length - 1];
+        } else {
+            this.currentTrackIndex = (this.currentTrackIndex - 1 + this.currentAlbum.tracks.length) % this.currentAlbum.tracks.length;
+        }
         this.playTrack();
     }
 
-    // Galaxy Wanderer: zoom out, pause, pick new random album
-    async wanderToNewAlbum() {
-        if (this.allAlbums.length <= 1) {
-            // Only one album, just keep playing
-            this.nextTrack();
+    // --- Galaxy Wanderer (auto-travel between album systems) ---
+
+    delay(ms) {
+        return new Promise((r) => setTimeout(r, ms));
+    }
+
+    cancelWandererCycle() {
+        this._wandererAbort = true;
+        this.warpGeneration++;
+        this.cancelPendingTrackEnd();
+    }
+
+    cancelPendingTrackEnd() {
+        if (this._trackEndResolve) {
+            const resolve = this._trackEndResolve;
+            this._trackEndResolve = null;
+            if (this._trackEndTimeout) {
+                clearTimeout(this._trackEndTimeout);
+                this._trackEndTimeout = null;
+            }
+            resolve();
+        }
+    }
+
+    waitForTrackEnd() {
+        return new Promise((resolve) => {
+            this._trackEndResolve = resolve;
+            this._trackEndTimeout = setTimeout(() => {
+                if (this._trackEndResolve === resolve) {
+                    this._trackEndResolve = null;
+                    this._trackEndTimeout = null;
+                    resolve();
+                }
+            }, 900000);
+        });
+    }
+
+    pickRandomAlbum(excludeAlbum) {
+        const albums = this.allAlbums;
+        if (!albums.length) return null;
+        if (albums.length === 1) return albums[0];
+
+        let pick;
+        do {
+            pick = albums[Math.floor(Math.random() * albums.length)];
+        } while (pick === excludeAlbum);
+        return pick;
+    }
+
+    pickRandomTrackIndex(excludeIndex = -1) {
+        const len = this.currentAlbum?.tracks?.length || 0;
+        if (len <= 1) return 0;
+
+        let idx;
+        do {
+            idx = Math.floor(Math.random() * len);
+        } while (idx === excludeIndex);
+        return idx;
+    }
+
+    async returnToGalaxyView() {
+        this._wandererExiting = true;
+        this.exitSystem();
+        this._wandererExiting = false;
+
+        document.getElementById('mode-label').innerText = 'WANDERING...';
+        document.getElementById('sub-label').innerText = 'Selecting new destination';
+    }
+
+    async runWandererAlbumVisit() {
+        if (!this.wandererMode || !this.allAlbums.length) return;
+
+        const album = this.pickRandomAlbum(this.currentAlbum);
+        if (!album) return;
+
+        document.getElementById('mode-label').innerText = 'WANDERING...';
+        document.getElementById('sub-label').innerText = album.title;
+
+        const entered = await this.enterSystem(album);
+        if (!entered || !this.wandererMode) return;
+
+        // Brief beat at system scale, then ease into the first planet
+        await this.delay(800);
+
+        for (let i = 0; i < this.wandererSongsPerAlbum; i++) {
+            if (!this.wandererMode || this.mode !== 'SYSTEM') break;
+
+            this.currentTrackIndex = this.pickRandomTrackIndex(
+                i > 0 ? this.currentTrackIndex : -1
+            );
+
+            const started = await this.playTrack();
+            if (!started) break;
+
+            await this.waitForTrackEnd();
+        }
+
+        if (this.wandererMode && this.mode === 'SYSTEM') {
+            await this.returnToGalaxyView();
+        }
+    }
+
+    async startWandererSession() {
+        if (this.mode === 'IDLE' || !this.allAlbums.length) return;
+        if (this.wandererBusy) return;
+
+        this._wandererAbort = false;
+        this.wandererManaging = true;
+        this.wandererBusy = true;
+
+        try {
+            if (this.mode === 'SYSTEM') {
+                await this.returnToGalaxyView();
+                if (!this.wandererMode || this._wandererAbort) return;
+                await this.delay(2500);
+            }
+
+            while (this.wandererMode && this.mode === 'GALAXY' && !this._wandererAbort) {
+                await this.runWandererAlbumVisit();
+                if (!this.wandererMode || this._wandererAbort) break;
+                await this.delay(2500);
+            }
+        } finally {
+            this.wandererBusy = false;
+            if (!this.wandererMode || this._wandererAbort) {
+                this.wandererManaging = false;
+            }
+        }
+    }
+
+    // --- Info ticker ---
+
+    async enrichTrackMetadata(trackData) {
+        if (!trackData || trackData.metadataLoaded) return;
+
+        if (trackData.path) {
+            const meta = await readTrackMetadata(trackData.path);
+            if (meta.title) trackData.metaTitle = meta.title;
+            if (meta.artist) trackData.metaArtist = meta.artist;
+            if (meta.album) trackData.metaAlbum = meta.album;
+            if (meta.blurb) trackData.blurb = meta.blurb;
+        } else if (trackData.handle) {
+            const meta = await readTrackMetadata(trackData.handle);
+            if (meta.title) trackData.metaTitle = meta.title;
+            if (meta.artist) trackData.metaArtist = meta.artist;
+            if (meta.album) trackData.metaAlbum = meta.album;
+            if (meta.blurb) trackData.blurb = meta.blurb;
+        }
+
+        trackData.metadataLoaded = true;
+    }
+
+    async refreshTickerFromCurrentTrack() {
+        if (!this.tickerEnabled) return;
+
+        if (!this.currentAlbum || this.currentTrackIndex < 0) {
+            this.ticker.showIdle();
             return;
         }
 
-        // Exit current system with cinematic effect
-        this.audio.playSound('scan');
-        this.system.highlight(null);
-        this.focusTarget = null;
-        this.engine.controls.autoRotate = false;
+        const trackData = this.currentAlbum.tracks[this.currentTrackIndex];
+        await this.enrichTrackMetadata(trackData);
 
-        // Zoom out to galaxy view
-        this.system.hide();
-        this.galaxy.show();
-        this.engine.camera.position.set(0, 400, 600);
-        this.engine.controls.target.set(0, 0, 0);
-        this.engine.controls.maxDistance = 3000;
+        const albumName = this.currentAlbum.title;
+        const trackTitle = trackData.metaTitle || trackData.title;
+        const artistName = trackData.metaArtist || this.currentAlbum.artist || 'Unknown Artist';
 
-        this.mode = 'GALAXY';
-        document.getElementById('mode-label').innerText = 'WANDERING...';
-        document.getElementById('sub-label').innerText = 'Selecting new destination';
-        document.getElementById('back-btn').style.display = 'none';
-        this.updateMediaBarVisibility();
-
-        // Pause for dramatic effect (2.5 seconds)
-        await new Promise(r => setTimeout(r, 2500));
-
-        // Pick a random different album
-        let newAlbum;
-        do {
-            const randomIndex = Math.floor(Math.random() * this.allAlbums.length);
-            newAlbum = this.allAlbums[randomIndex];
-        } while (newAlbum === this.currentAlbum && this.allAlbums.length > 1);
-
-        // Enter the new system
-        this.enterSystem(newAlbum);
-
-        // Wait for transition to complete, then start playing
-        await new Promise(r => setTimeout(r, 1500));
-
-        // Reset wanderer counter and shuffle bag for new album
-        this.wandererSongsPlayed = 0;
-        this.resetShuffleBag();
-        this.currentTrackIndex = this.isShuffle ? this.getNextShuffleIndex() : 0;
-        this.playTrack();
+        this.ticker.update({
+            album: albumName,
+            track: trackTitle,
+            artist: artistName,
+            blurb: trackData.blurb || null
+        });
     }
 
     updatePlayerUI() {
         if (this.currentAlbum && this.currentTrackIndex > -1) {
             const t = this.currentAlbum.tracks[this.currentTrackIndex];
-            document.getElementById('player-title').innerText = t.title;
-            document.getElementById('player-artist').innerText = t.artist;
+            document.getElementById('player-title').innerText = t.metaTitle || t.title;
+            const artist = t.metaArtist || this.currentAlbum.artist || 'Unknown Artist';
+            document.getElementById('player-artist').innerText = artist;
+            if (this.tickerEnabled) {
+                this.refreshTickerFromCurrentTrack();
+            }
         } else {
             document.getElementById('player-title').innerText = "No Track Selected";
             document.getElementById('player-artist').innerText = "--";
+            if (this.tickerEnabled) {
+                this.ticker.showIdle();
+            }
         }
     }
 
@@ -713,23 +990,26 @@ export class App {
                 }
             }
 
-            // Cinematic Zoom Logic
+            // Full 360° cinematic orbit around the playing planet
             if (this.focusTarget) {
-                const targetPos = new THREE.Vector3();
-                this.focusTarget.getWorldPosition(targetPos);
-                // Smoothly interpolate camera target to the moving planet
-                this.engine.controls.target.lerp(targetPos, 0.1);
+                const planetPos = this._planetFocusScratch;
+                this.focusTarget.getWorldPosition(planetPos);
 
-                // Calculate ideal camera position at the desired distance from planet
-                const cameraPos = this.engine.camera.position;
-                const dirToCamera = new THREE.Vector3().subVectors(cameraPos, targetPos).normalize();
-                const idealPos = new THREE.Vector3().addVectors(
-                    targetPos,
-                    dirToCamera.multiplyScalar(this.idealCameraDistance)
+                this.engine.controls.target.lerp(planetPos, 0.04);
+
+                this._cinematicOrbitAngle += dt * this.cinematicOrbitSpeed;
+
+                const dist = this.planetCameraDistance;
+                const pitch = this._cinematicOrbitPitch;
+                const cosP = Math.cos(pitch);
+                const idealOffset = this._idealCamScratch.set(
+                    Math.cos(this._cinematicOrbitAngle) * dist * cosP,
+                    dist * Math.sin(pitch),
+                    Math.sin(this._cinematicOrbitAngle) * dist * cosP
                 );
 
-                // Smoothly move camera toward ideal position
-                cameraPos.lerp(idealPos, 0.03);
+                const idealCam = new THREE.Vector3().addVectors(planetPos, idealOffset);
+                this.engine.camera.position.lerp(idealCam, 0.028);
             }
         }
 

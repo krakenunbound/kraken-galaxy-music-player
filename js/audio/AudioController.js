@@ -30,6 +30,7 @@ export class AudioController {
         this.currentAudioElement = null;
         this.currentBlobUrl = null;
         this.currentSource = null;
+        this._playId = 0;
 
         // Callbacks
         this.onTrackEnd = null;
@@ -46,22 +47,19 @@ export class AudioController {
         if (!this.initialized) return 0;
         this.analyser.getByteFrequencyData(this.dataArray);
 
-        // Calculate average volume
         let sum = 0;
         for (let i = 0; i < this.dataArray.length; i++) {
             sum += this.dataArray[i];
         }
-        return sum / this.dataArray.length; // Returns 0-255
+        return sum / this.dataArray.length;
     }
 
     toggleMute() {
         const t = this.ctx.currentTime;
         if (this.isMuted) {
-            // Unmute
             this.masterGain.gain.setTargetAtTime(1.0, t, 0.1);
             this.isMuted = false;
         } else {
-            // Mute
             this.masterGain.gain.setTargetAtTime(0, t, 0.1);
             this.isMuted = true;
         }
@@ -76,30 +74,43 @@ export class AudioController {
         this.sfxGain.gain.setTargetAtTime(val, this.ctx.currentTime, 0.1);
     }
 
-    // --- REAL AUDIO PLAYBACK ---
+    resolveFileSrc(path) {
+        if (window.__TAURI__?.core?.convertFileSrc) {
+            return window.__TAURI__.core.convertFileSrc(path);
+        }
+        return path;
+    }
 
-    async playAudioFile(fileHandle) {
-        if (!this.initialized) return;
+    async playAudioFile(fileHandleOrPath) {
+        if (!this.initialized) await this.init();
 
-        // Clean up previous audio
-        this.cleanupAudio();
+        const playId = ++this._playId;
+        this.hardStop();
 
         try {
-            const file = await fileHandle.getFile();
-            this.currentBlobUrl = URL.createObjectURL(file);
+            let audioUrl;
 
-            this.currentAudioElement = new Audio(this.currentBlobUrl);
-            this.currentAudioElement.crossOrigin = "anonymous";
+            if (typeof fileHandleOrPath === 'string') {
+                audioUrl = this.resolveFileSrc(fileHandleOrPath);
+                this.currentBlobUrl = null;
+            } else {
+                const file = await fileHandleOrPath.getFile();
+                if (playId !== this._playId) return false;
+                this.currentBlobUrl = URL.createObjectURL(file);
+                audioUrl = this.currentBlobUrl;
+            }
 
-            // Connect to Web Audio API for visualization
-            this.currentSource = this.ctx.createMediaElementSource(this.currentAudioElement);
+            if (playId !== this._playId) return false;
+
+            const element = new Audio(audioUrl);
+            element.crossOrigin = "anonymous";
+
+            this.currentAudioElement = element;
+            this.currentSource = this.ctx.createMediaElementSource(element);
             this.currentSource.connect(this.musicGain);
 
-            await this.currentAudioElement.play();
-            this.isPlaying = true;
-            this.isPaused = false;
-
-            this.currentAudioElement.onended = () => {
+            element.onended = () => {
+                if (playId !== this._playId) return;
                 this.isPlaying = false;
                 this.isPaused = false;
                 if (this.onTrackEnd) {
@@ -107,8 +118,24 @@ export class AudioController {
                 }
             };
 
+            await element.play();
+
+            if (playId !== this._playId) {
+                element.pause();
+                element.removeAttribute('src');
+                element.load();
+                return false;
+            }
+
+            this.isPlaying = true;
+            this.isPaused = false;
+            return true;
         } catch (err) {
             console.error("Error playing audio file:", err);
+            if (playId === this._playId) {
+                this.hardStop();
+            }
+            return false;
         }
     }
 
@@ -120,36 +147,52 @@ export class AudioController {
         }
     }
 
-    resumeAudio() {
+    async resumeAudio() {
         if (this.currentAudioElement && this.isPaused) {
-            this.currentAudioElement.play();
-            this.isPlaying = true;
-            this.isPaused = false;
+            try {
+                await this.currentAudioElement.play();
+                this.isPlaying = true;
+                this.isPaused = false;
+                return true;
+            } catch (err) {
+                console.error("Error resuming audio:", err);
+                return false;
+            }
         }
+        return false;
     }
 
     stopAudio() {
-        if (this.currentAudioElement) {
-            this.currentAudioElement.pause();
-            this.currentAudioElement.currentTime = 0;
-        }
-        this.isPlaying = false;
-        this.isPaused = false;
+        this._playId++;
+        this.hardStop();
     }
 
-    cleanupAudio() {
+    hardStop() {
+        if (this.currentSource) {
+            try {
+                this.currentSource.disconnect();
+            } catch (_) { /* already disconnected */ }
+            this.currentSource = null;
+        }
         if (this.currentAudioElement) {
-            this.currentAudioElement.pause();
-            this.currentAudioElement.src = "";
+            const el = this.currentAudioElement;
+            el.onended = null;
+            el.pause();
+            el.removeAttribute('src');
+            el.load();
             this.currentAudioElement = null;
         }
         if (this.currentBlobUrl) {
             URL.revokeObjectURL(this.currentBlobUrl);
             this.currentBlobUrl = null;
         }
-        this.currentSource = null;
         this.isPlaying = false;
         this.isPaused = false;
+    }
+
+    /** @deprecated Use hardStop — kept for any legacy callers */
+    cleanupAudio() {
+        this.hardStop();
     }
 
     seek(time) {
@@ -166,12 +209,8 @@ export class AudioController {
         return this.currentAudioElement ? this.currentAudioElement.duration : 0;
     }
 
-    // Legacy method signature for compatibility
     playTrackSim() {
-        console.warn("Simulation playback disabled. Use playAudioFile.");
-    }
-
-    playSound(type) {
-        // Sounds removed as per user request
+        console.warn("Simulation playback: no audio file handle for this track.");
+        return false;
     }
 }
